@@ -10,11 +10,10 @@
 
 // Destination URL: Where this proxy leads to.
 $destinationURL = 'http://www.otherdomain.com/backend.php';
-
-// The only domain from which requests are authorized.
+// The only domain from which requests are authorized.  Remove this to authorize all requests
 $RequestDomain = 'example.com';
-
 // That's it for configuration!
+
 
 // Credits to Chris Hope (http://www.electrictoolbox.com/chris-hope/) for this function.
 // http://www.electrictoolbox.com/php-get-headers-sent-from-browser/
@@ -42,19 +41,19 @@ if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
     //echo "REMOTE_ADDR: ".$ip;
 }
 
-$req_parts = parse_url($_SERVER['HTTP_REFERER']);
-
 // IF domain name matches the authorized domain, proceed with request.
-if($req_parts["host"] == $RequestDomain) {
+if(!isset($RequestDomain) || checkRequestAllowed($RequestDomain)) {
     $method = $_SERVER['REQUEST_METHOD'];
 	if ($method == "GET") {
 		$data=$_GET;
 	} elseif ($method=="POST" && count($_POST)>0) {
 		$data=$_POST;
 	} else {
-		$data = $HTTP_RAW_POST_DATA;
+		//see http://us.php.net/manual/en/wrappers.php.php
+		$data = file_get_contents('php://input');
+		//$data = $HTTP_RAW_POST_DATA;
 	}
-    $response = proxy_request($destinationURL, ($method == "GET" ? $_GET : $_POST), $method);
+    $response = proxy_request($destinationURL, $data, $method);
     $headerArray = explode("\r\n", $response['header']);
 	$is_gzip = false;
 	$is_chunked = false;
@@ -69,7 +68,7 @@ if($req_parts["host"] == $RequestDomain) {
 			$is_chunked = true;
 		} else {
 			// todo: Find out why this doesn't work (removes all contents!)
-			// header($headerLine, FALSE);
+			header($headerLine, FALSE);
 		}
     }
 	$contents = $response['content'];
@@ -81,7 +80,7 @@ if($req_parts["host"] == $RequestDomain) {
 	}
 	echo $contents;
   } else {
-    echo $domainName." is not an authorized domain.";
+    echo "Unauthorized";
   }
 
   
@@ -90,24 +89,28 @@ if($req_parts["host"] == $RequestDomain) {
 
 
 	$req_dump = print_r($data, TRUE);
-
+	// parse the given URL
+	$url = parse_url($url);
+	
     global $ip;
     // Convert the data array into URL Parameters like a=b&foo=bar etc.
 	if ($method == "GET")  {
 		$data = http_build_query($data);
 		// Add GET params from destination URL
-		$data = $data . parse_url($url)["query"];
+		if (array_key_exists('query',$url))
+			$data = $data . $url['query'];
 	} elseif ($method=="POST" && count($_POST)>0) {
 		$data = http_build_query($data);
 		// Add GET params from destination URL
-		$data = $data . parse_url($url)["query"];
+		if (array_key_exists('query',$url))
+			$data = $data . $url['query'];
 	} else {
 		$data = $data;
 	}
     $datalength = strlen($data);
  
     // parse the given URL
-    $url = parse_url($url);
+    //$url = parse_url($url);
  
     if ($url['scheme'] != 'http') { 
         die('Error: Only HTTP request are supported !');
@@ -116,12 +119,14 @@ if($req_parts["host"] == $RequestDomain) {
     // extract host and path:
     $host = $url['host'];
     $path = $url['path'];
-    
-	if ($url['scheme'] == 'http') {
-   		 $fp = fsockopen($host, 80, $errno, $errstr, 30);
-    } else($url['scheme'] == 'https') {
-    	$fp = fsockopen($host, 443, $errno, $errstr, 30);
-	}
+    if (array_key_exists('port', $url))
+	    $port = intval($url['port']);
+	else if ($url['scheme'] == 'http') 
+		$port = 80;
+	else if ($url['scheme'] == 'https')
+		$port = 443;
+	
+	$fp = fsockopen($host, $port, $errno, $errstr, 30);
  
     if ($fp){
         // send the request headers:
@@ -185,6 +190,19 @@ function decode_chunked($str) {
     $str = substr($str, $pos + 2 + $len);
   }
   return $res;
+}
+
+/**
+ * Check if the current requests is allowed
+ * 
+ * @param string $allowedDomain
+ * @return boolean
+ */
+function checkRequestAllowed($allowedDomain){
+	if (!(array_contains_key('HTTP_REFERER', $_SERVER)))
+		return false;
+		$req_parts = parse_url($_SERVER['HTTP_REFERER']);
+		return $req_parts["host"] == $allowedDomain;
 }
 
 ?>
