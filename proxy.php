@@ -1,5 +1,6 @@
 <?php
 /*--------------------------------------------------------------/
+NOTE: this is a fork by opendatahacklab of the original project illustrated below
 | PROXY.PHP                                                     |
 | Created By: Évelyne Lachance                                  |
 | Contact: eslachance@gmail.com                                 |
